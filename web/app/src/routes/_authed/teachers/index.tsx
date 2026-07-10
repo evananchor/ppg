@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search } from 'lucide-react'
+import { FileSpreadsheet, Plus, Search } from 'lucide-react'
 import { z } from 'zod'
 
 import {
@@ -12,6 +12,8 @@ import {
 } from '@/api/teachers'
 import type { Teacher } from '@/api/types'
 import { useMe } from '@/lib/auth'
+import { useTeacherStatusLabel, useTranslation } from '@/lib/i18n'
+import { BulkPanel } from '@/components/BulkPanel'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
 import { Modal } from '@/components/Modal'
@@ -28,6 +30,7 @@ const searchSchema = z.object({
   view: z.string().optional().catch(undefined),
   edit: z.string().optional().catch(undefined),
   new: z.boolean().optional().catch(undefined),
+  bulk: z.boolean().optional().catch(undefined),
 })
 
 type SearchState = z.infer<typeof searchSchema>
@@ -40,14 +43,16 @@ export const Route = createFileRoute('/_authed/teachers/')({
 function TeachersPage() {
   const navigate = useNavigate({ from: '/teachers/' })
   const search = Route.useSearch()
-  const { q = '', status, page = 1, view, edit, new: isNew } = search
+  const { q = '', status, page = 1, view, edit, new: isNew, bulk } = search
   const { data: user } = useMe()
   const isAdmin = user?.role === 'admin'
+  const { t } = useTranslation()
 
   const filterSearch: SearchState = { q, status, page }
   const goTo = (next: Partial<SearchState>) =>
     void navigate({ search: { ...filterSearch, ...next } })
-  const close = () => goTo({ view: undefined, edit: undefined, new: undefined })
+  const close = () =>
+    goTo({ view: undefined, edit: undefined, new: undefined, bulk: undefined })
 
   const { data, isPending } = useQuery({
     queryKey: ['teachers', { q, status, page }],
@@ -61,9 +66,9 @@ function TeachersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['teachers'] }),
   })
 
-  const handleDelete = (t: Teacher) => {
-    if (confirm(`Hapus ${t.name}? Tindakan ini tidak dapat dibatalkan.`)) {
-      deleteMutation.mutate(t.id)
+  const handleDelete = (tc: Teacher) => {
+    if (confirm(t('teachers.confirmDelete', { name: tc.name }))) {
+      deleteMutation.mutate(tc.id)
     }
   }
 
@@ -73,13 +78,19 @@ function TeachersPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold">Pengajar</h1>
-        {isAdmin ? (
-          <Button onClick={() => goTo({ new: true })} className="self-start sm:self-auto">
-            <Plus size={16} className="mr-1" />
-            Tambah Pengajar
+        <h1 className="text-2xl font-semibold">{t('teachers.heading')}</h1>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Button variant="secondary" onClick={() => goTo({ bulk: true })}>
+            <FileSpreadsheet size={16} className="mr-1" />
+            {t('bulk.importExportBtn')}
           </Button>
-        ) : null}
+          {isAdmin ? (
+            <Button onClick={() => goTo({ new: true })}>
+              <Plus size={16} className="mr-1" />
+              {t('teachers.addBtn')}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <form
@@ -104,19 +115,24 @@ function TeachersPage() {
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
           />
-          <Input name="q" defaultValue={q} placeholder="Cari nama atau panggilan" className="pl-9" />
+          <Input
+            name="q"
+            defaultValue={q}
+            placeholder={t('teachers.searchPlaceholder')}
+            className="pl-9"
+          />
         </div>
         <select
           name="status"
           defaultValue={status ?? ''}
           className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
         >
-          <option value="">Semua status</option>
-          <option value="active">Aktif</option>
-          <option value="retired">Purna</option>
+          <option value="">{t('teachers.allStatus')}</option>
+          <option value="active">{t('status.active')}</option>
+          <option value="retired">{t('status.retired')}</option>
         </select>
         <Button type="submit" variant="secondary" size="md">
-          Terapkan
+          {t('common.apply')}
         </Button>
       </form>
 
@@ -124,44 +140,44 @@ function TeachersPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-2">Nama</th>
-              <th className="hidden px-4 py-2 sm:table-cell">Panggilan</th>
-              <th className="hidden px-4 py-2 md:table-cell">Kelompok</th>
-              <th className="hidden px-4 py-2 md:table-cell">Daerah</th>
-              <th className="px-4 py-2">Status</th>
-              {isAdmin ? <th className="px-4 py-2 text-right">Aksi</th> : null}
+              <th className="px-4 py-2">{t('teachers.colName')}</th>
+              <th className="hidden px-4 py-2 sm:table-cell">{t('teachers.colNickname')}</th>
+              <th className="hidden px-4 py-2 md:table-cell">{t('teachers.colKelompok')}</th>
+              <th className="hidden px-4 py-2 md:table-cell">{t('teachers.colDaerah')}</th>
+              <th className="px-4 py-2">{t('teachers.colStatus')}</th>
+              {isAdmin ? <th className="px-4 py-2 text-right">{t('teachers.colActions')}</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isPending ? (
               <tr>
                 <td colSpan={isAdmin ? 6 : 5} className="px-4 py-6 text-center text-slate-500">
-                  Memuat…
+                  {t('common.loading')}
                 </td>
               </tr>
             ) : data && data.items.length > 0 ? (
-              data.items.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50">
+              data.items.map((tc) => (
+                <tr key={tc.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2">
                     <button
                       type="button"
-                      onClick={() => goTo({ view: t.id })}
+                      onClick={() => goTo({ view: tc.id })}
                       className="text-left text-slate-900 hover:underline"
                     >
-                      {t.name}
+                      {tc.name}
                     </button>
                   </td>
-                  <td className="hidden px-4 py-2 sm:table-cell">{t.nickname ?? '—'}</td>
-                  <td className="hidden px-4 py-2 md:table-cell">{t.kelompok}</td>
-                  <td className="hidden px-4 py-2 md:table-cell">{t.daerah}</td>
+                  <td className="hidden px-4 py-2 sm:table-cell">{tc.nickname ?? '—'}</td>
+                  <td className="hidden px-4 py-2 md:table-cell">{tc.kelompok}</td>
+                  <td className="hidden px-4 py-2 md:table-cell">{tc.daerah}</td>
                   <td className="px-4 py-2">
-                    <StatusPill status={t.status} />
+                    <StatusPill status={tc.status} />
                   </td>
                   {isAdmin ? (
                     <td className="px-4 py-2 text-right">
                       <RowActions
-                        onEdit={() => goTo({ edit: t.id })}
-                        onDelete={() => handleDelete(t)}
+                        onEdit={() => goTo({ edit: tc.id })}
+                        onDelete={() => handleDelete(tc)}
                         deleteDisabled={deleteMutation.isPending}
                       />
                     </td>
@@ -171,7 +187,7 @@ function TeachersPage() {
             ) : (
               <tr>
                 <td colSpan={isAdmin ? 6 : 5} className="px-4 py-6 text-center text-slate-500">
-                  Belum ada data Pengajar.
+                  {t('teachers.empty')}
                 </td>
               </tr>
             )}
@@ -180,9 +196,7 @@ function TeachersPage() {
       </div>
 
       <div className="flex flex-col gap-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-        <span>
-          Halaman {page} dari {totalPages} · {total} total
-        </span>
+        <span>{t('common.pageStatus', { page, total: totalPages, count: total })}</span>
         <div className="flex gap-2">
           <Button
             variant="secondary"
@@ -190,7 +204,7 @@ function TeachersPage() {
             disabled={page <= 1}
             onClick={() => goTo({ page: Math.max(1, page - 1) })}
           >
-            Sebelumnya
+            {t('common.prev')}
           </Button>
           <Button
             variant="secondary"
@@ -198,7 +212,7 @@ function TeachersPage() {
             disabled={page >= totalPages}
             onClick={() => goTo({ page: Math.min(totalPages, page + 1) })}
           >
-            Berikutnya
+            {t('common.next')}
           </Button>
         </div>
       </div>
@@ -214,24 +228,33 @@ function TeachersPage() {
         id={edit}
         open={!!edit && isAdmin}
         onClose={close}
-        onSaved={(t) => goTo({ edit: undefined, view: t.id })}
+        onSaved={(tc) => goTo({ edit: undefined, view: tc.id })}
       />
       <NewModal open={!!isNew && isAdmin} onClose={close} />
+      <Modal open={!!bulk} onClose={close} size="xl" title={t('teachers.bulkTitle')}>
+        <BulkPanel
+          entity="teachers"
+          isAdmin={isAdmin}
+          invalidateKey={['teachers']}
+          exportParams={{ q, status }}
+        />
+      </Modal>
     </div>
   )
 }
 
 function StatusPill({ status }: { status: 'active' | 'retired' }) {
+  const statusLabel = useTeacherStatusLabel()
   if (status === 'active') {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-        Aktif
+        {statusLabel(status)}
       </span>
     )
   }
   return (
     <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
-      Purna
+      {statusLabel(status)}
     </span>
   )
 }
@@ -251,6 +274,7 @@ function ViewModal({
   isAdmin: boolean
   onEdit: (id: string) => void
 }) {
+  const { t } = useTranslation()
   const query = useQuery({
     queryKey: ['teachers', id],
     queryFn: () => getTeacher(id as string),
@@ -262,21 +286,21 @@ function ViewModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title={query.data?.name ?? 'Detail Pengajar'}
+      title={query.data?.name ?? t('teachers.detailTitle')}
     >
       {query.isPending ? (
-        <p className="text-slate-500">Memuat…</p>
+        <p className="text-slate-500">{t('common.loading')}</p>
       ) : query.isError || !query.data ? (
-        <p className="text-red-600">Gagal memuat data.</p>
+        <p className="text-red-600">{t('common.loadError')}</p>
       ) : (
         <>
           <TeacherDetail teacher={query.data} />
           {isAdmin ? (
             <div className="mt-6 flex justify-end gap-2 border-t border-slate-200 pt-4">
               <Button variant="secondary" onClick={onClose}>
-                Tutup
+                {t('common.close')}
               </Button>
-              <Button onClick={() => onEdit(query.data!.id)}>Ubah</Button>
+              <Button onClick={() => onEdit(query.data!.id)}>{t('common.edit')}</Button>
             </div>
           ) : null}
         </>
@@ -296,6 +320,7 @@ function EditModal({
   onClose: () => void
   onSaved: (teacher: Teacher) => void
 }) {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const query = useQuery({
     queryKey: ['teachers', id],
@@ -313,15 +338,15 @@ function EditModal({
   })
 
   return (
-    <Modal open={open} onClose={onClose} size="xl" title="Ubah Pengajar">
+    <Modal open={open} onClose={onClose} size="xl" title={t('teachers.editTitle')}>
       {query.isPending ? (
-        <p className="text-slate-500">Memuat…</p>
+        <p className="text-slate-500">{t('common.loading')}</p>
       ) : query.isError || !query.data ? (
-        <p className="text-red-600">Gagal memuat data.</p>
+        <p className="text-red-600">{t('common.loadError')}</p>
       ) : (
         <TeacherForm
           initial={query.data}
-          submitLabel="Simpan"
+          submitLabel={t('common.save')}
           pending={mutation.isPending}
           error={mutation.error}
           onSubmit={(input) => mutation.mutate(input)}
@@ -333,6 +358,7 @@ function EditModal({
 }
 
 function NewModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const mutation = useMutation({
     mutationFn: createTeacher,
@@ -343,9 +369,9 @@ function NewModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   })
 
   return (
-    <Modal open={open} onClose={onClose} size="xl" title="Tambah Pengajar">
+    <Modal open={open} onClose={onClose} size="xl" title={t('teachers.newTitle')}>
       <TeacherForm
-        submitLabel="Simpan"
+        submitLabel={t('common.save')}
         pending={mutation.isPending}
         error={mutation.error}
         onSubmit={(input) => mutation.mutate(input)}
