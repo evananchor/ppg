@@ -145,7 +145,20 @@ func (h *Bulk) Import(w http.ResponseWriter, r *http.Request) {
 
 // Export handles GET /api/{entity}/export.csv. Streams CSV.
 func (h *Bulk) Export(w http.ResponseWriter, r *http.Request) {
-	entity := chi.URLParam(r, "entity")
+	h.exportEntity(w, r, chi.URLParam(r, "entity"))
+}
+
+// ExportFor returns an Export handler bound to a fixed entity. Entities that
+// also register GET /{entity}/{id} need this: chi resolves the static
+// "/students" (etc.) subtree first and matches "export.csv" against {id},
+// so the generic /{entity}/export.csv pattern is never reached for them.
+func (h *Bulk) ExportFor(entity string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h.exportEntity(w, r, entity)
+	}
+}
+
+func (h *Bulk) exportEntity(w http.ResponseWriter, r *http.Request, entity string) {
 	exp, ok := h.exports[entity]
 	if !ok {
 		httpx.Error(w, http.StatusNotFound, "not_found", fmt.Sprintf("bulk export for %q is not supported", entity))

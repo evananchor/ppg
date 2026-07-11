@@ -1,7 +1,7 @@
 import { resolveApiPath } from './base'
 import { ApiError, apiFetch } from './client'
 
-export type BulkEntity = 'students' | 'teachers'
+export type BulkEntity = 'students' | 'teachers' | 'attendances'
 
 export type BulkMode = 'create' | 'upsert' | 'dry-run'
 

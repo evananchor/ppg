@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { FileSpreadsheet, Plus } from 'lucide-react'
 import { z } from 'zod'
 
 import {
@@ -25,6 +25,7 @@ import { Modal } from '@/components/Modal'
 import { RowActions } from '@/components/RowActions'
 import { AttendanceDetail } from '@/components/AttendanceDetail'
 import { AttendanceForm } from '@/components/AttendanceForm'
+import { BulkPanel } from '@/components/BulkPanel'
 
 const PAGE_SIZE = 25
 
@@ -38,6 +39,7 @@ const searchSchema = z.object({
   view: z.string().optional().catch(undefined),
   edit: z.string().optional().catch(undefined),
   new: z.boolean().optional().catch(undefined),
+  bulk: z.boolean().optional().catch(undefined),
 })
 
 type SearchState = z.infer<typeof searchSchema>
@@ -60,6 +62,7 @@ function SessionsPage() {
     view,
     edit,
     new: isNew,
+    bulk,
   } = search
   const { data: user } = useMe()
   const isAdmin = user?.role === 'admin'
@@ -69,7 +72,7 @@ function SessionsPage() {
   const filterSearch: SearchState = { dateFrom, dateTo, teacherId, studentId, status, page }
   const goTo = (next: Partial<SearchState>) =>
     void navigate({ search: { ...filterSearch, ...next } })
-  const close = () => goTo({ view: undefined, edit: undefined, new: undefined })
+  const close = () => goTo({ view: undefined, edit: undefined, new: undefined, bulk: undefined })
 
   const { data, isPending } = useQuery({
     queryKey: ['attendances', { dateFrom, dateTo, teacherId, studentId, status, page }],
@@ -116,12 +119,18 @@ function SessionsPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">{t('sessions.heading')}</h1>
-        {isAdmin ? (
-          <Button onClick={() => goTo({ new: true })} className="self-start sm:self-auto">
-            <Plus size={16} className="mr-1" />
-            {t('sessions.addBtn')}
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Button variant="secondary" onClick={() => goTo({ bulk: true })}>
+            <FileSpreadsheet size={16} className="mr-1" />
+            {t('bulk.importExportBtn')}
           </Button>
-        ) : null}
+          {isAdmin ? (
+            <Button onClick={() => goTo({ new: true })}>
+              <Plus size={16} className="mr-1" />
+              {t('sessions.addBtn')}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <form
@@ -290,6 +299,14 @@ function SessionsPage() {
         onSaved={(att) => goTo({ edit: undefined, view: att.id })}
       />
       <NewModal open={!!isNew && isAdmin} onClose={close} />
+      <Modal open={!!bulk} onClose={close} size="xl" title={t('sessions.bulkTitle')}>
+        <BulkPanel
+          entity="attendances"
+          isAdmin={isAdmin}
+          invalidateKey={['attendances']}
+          exportParams={{ from: dateFrom, to: dateTo, teacherId, studentId, status }}
+        />
+      </Modal>
     </div>
   )
 }

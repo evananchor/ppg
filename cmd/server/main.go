@@ -181,6 +181,12 @@ func run() error {
 			})
 			p.Get("/{entity}/export.csv", bulkH.Export)
 			p.Get("/{entity}/bulk/schema", bulkH.Schema)
+			// These entities also register GET /{entity}/{id}, whose static
+			// subtree shadows the generic /{entity}/export.csv pattern in
+			// chi ("export.csv" matches {id}); bind them explicitly.
+			for _, entity := range []string{"students", "teachers", "attendances"} {
+				p.Get("/"+entity+"/export.csv", bulkH.ExportFor(entity))
+			}
 
 			p.Group(func(adm chi.Router) {
 				adm.Use(auth.RequireRole("admin"))
