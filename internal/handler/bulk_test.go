@@ -205,3 +205,38 @@ func TestBulkSchema_ReturnsHeaders(t *testing.T) {
 		t.Errorf("expected non-empty headers; got: %s", w.Body.String())
 	}
 }
+
+// TestBulkExport_NotShadowedByGetByID reproduces the production route layout
+// where GET /{entity}/{id} exists alongside the generic
+// GET /{entity}/export.csv: chi resolves the static "/teachers" subtree first
+// and matches "export.csv" against {id}, so the export must be bound
+// explicitly via ExportFor.
+func TestBulkExport_NotShadowedByGetByID(t *testing.T) {
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	teachers := store.NewTeachers(db)
+	h := NewBulk(BulkOptions{Teachers: store.NewTeachersBulk(teachers)})
+
+	r := chi.NewRouter()
+	r.Get("/teachers/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound) // stand-in for the Get-by-ID handler
+	})
+	r.Get("/{entity}/export.csv", h.Export)
+	r.Get("/teachers/export.csv", h.ExportFor("teachers"))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/teachers/export.csv", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 from export, got %d (route shadowed by /{entity}/{id}?)", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Fatalf("want text/csv, got %q", ct)
+	}
+}
