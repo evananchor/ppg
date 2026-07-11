@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 
 import { routeTree } from './routeTree.gen'
+import { LanguageProvider } from './lib/i18n'
 import './index.css'
 import 'leaflet/dist/leaflet.css'
 
@@ -34,7 +35,9 @@ if (!rootEl) throw new Error('#root not found')
 createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <LanguageProvider>
+        <RouterProvider router={router} />
+      </LanguageProvider>
     </QueryClientProvider>
   </StrictMode>,
 )
