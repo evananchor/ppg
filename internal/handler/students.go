@@ -33,7 +33,7 @@ type studentBody struct {
 	DateOfBirth *string `json:"dateOfBirth,omitempty"  validate:"omitempty,datetime=2006-01-02"`
 	Gender      string  `json:"gender"      validate:"required,oneof=male female"`
 	Level       string  `json:"level"                  validate:"required,oneof=Caberawit 'Pra Remaja' Remaja 'Pra Nikah'"`
-	Kelompok    string  `json:"kelompok"               validate:"required,oneof=California Chicago 'New Hampshire' Canada"`
+	Kelompok    string  `json:"kelompok"               validate:"required,oneof=California Chicago 'New Hampshire' Canada Other"`
 	City        *string `json:"city,omitempty"         validate:"omitempty,max=200"`
 	JoinedAt    *string `json:"joinedAt,omitempty"     validate:"omitempty,datetime=2006-01-02"`
 	LeftAt      *string `json:"leftAt,omitempty"       validate:"omitempty,datetime=2006-01-02"`
@@ -100,10 +100,17 @@ func (h *Students) List(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 
+	gender := q.Get("gender")
+	if gender != "" && gender != "male" && gender != "female" {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "gender harus 'male' atau 'female'")
+		return
+	}
+
 	res, err := h.students.List(r.Context(), store.ListParams{
 		Query:    q.Get("q"),
 		Status:   q.Get("status"),
 		Kelompok: q.Get("kelompok"),
+		Gender:   gender,
 		Limit:    limit,
 		Offset:   offset,
 	})

@@ -9,17 +9,21 @@ key-concepts: [httponly-cookie, dynamic-api-path, csrf, shared-secret, csp, rate
 
 ## TL;DR
 
-Bring ppgus's security posture up to gnrs's: keep tokens HttpOnly (already done), add **refresh-token rotation**, an optional **dynamic per-session API path** for CSRF defense-in-depth, a shared-secret check between an upstream worker (when present) and ppgus, **CSP/HSTS** headers, and **rate limiting** on auth and self-attendance endpoints.
+PPGus already keeps access and refresh tokens HttpOnly, rotates refresh tokens,
+and enables a **dynamic per-session API path** by default for CSRF
+defense-in-depth. Remaining hardening work includes an optional shared-secret
+check for an upstream worker, **CSP/HSTS** headers, and **rate limiting** on
+auth and self-attendance endpoints.
 
 Checklist:
 
-- [ ] Add refresh-token cookie + rotation (`auth_refresh`).
-- [ ] Add `users.refresh_jti` for revocation.
-- [ ] Add dynamic-API-path mounting (`/{apiPath}/` ↔ `/api/`).
+- [x] Add refresh-token cookie + rotation (`auth_refresh`).
+- [x] Add `users.refresh_jti` for revocation.
+- [x] Add dynamic-API-path mounting (`/{apiPath}/` ↔ `/api/`).
 - [ ] Add `X-PPGUS-Worker-Auth` shared-secret check.
 - [ ] Add CSP, HSTS, X-Frame-Options, Referrer-Policy headers.
 - [ ] Add per-user rate limiter middleware.
-- [ ] Document the threat model.
+- [x] Document the threat model.
 
 ---
 
@@ -27,12 +31,12 @@ Checklist:
 
 From the codebase inspection:
 
-- JWT HS256 in HttpOnly cookie `auth`, `SameSite=Strict`, `Secure` only when `COOKIE_SECURE=true`.
-- No refresh token; access cookie TTL controlled by `JWT_TTL` (default 24h).
+- JWT HS256 in HttpOnly cookie `auth`, `SameSite=Lax`, `Secure` only when `COOKIE_SECURE=true`.
+- Rotating HttpOnly refresh token `auth_refresh` with server-side `refresh_jti` revocation; access TTL is controlled by `JWT_TTL` (default 24h), and refresh TTL is 30 days.
 - No CSP / HSTS / X-Frame headers.
 - No rate limiting.
 - No shared-secret check; the API is open to any caller with a valid cookie.
-- Static `/api/*` path; no per-session randomisation.
+- Six-character dynamic API prefixes are enabled by default; only login bootstrap and public attendance remain directly reachable under `/api/*`.
 
 ## 2. Refresh tokens
 
@@ -40,10 +44,12 @@ From the codebase inspection:
 
 | Cookie | Purpose | TTL | Path | Notes |
 |---|---|---|---|---|
-| `auth` | Access JWT | 15 minutes | `/` | HttpOnly, Secure (in prod), SameSite=Strict |
-| `auth_refresh` | Refresh JWT | 30 days | `/api/auth` | HttpOnly, Secure (in prod), SameSite=Strict |
+| `auth` | Access JWT | 24 hours (default) | `/` | HttpOnly, Secure (in prod), SameSite=Lax |
+| `auth_refresh` | Refresh JWT | 30 days | `/` | HttpOnly, Secure (in prod), SameSite=Lax |
+| `auth_path` | Dynamic API prefix | Same as access JWT | `/` | HttpOnly, Secure (in prod), SameSite=Lax |
 
-Limiting `auth_refresh` to `Path=/api/auth` keeps it out of every regular request.
+All three cookies currently use `Path=/` because authenticated requests move
+under a per-session dynamic prefix.
 
 ### 2.2 Rotation
 
@@ -69,36 +75,43 @@ If the same `jti` is presented twice, the second presentation means an attacker 
 
 ## 3. Dynamic per-session API path
 
-(Reference: gnrs's worker injects a 12-hex API path so that browser code calls `/a3f8d2e1b9c7/user/...` instead of `/api/user/...`. This makes CSRF tokens redundant and frustrates automated scanners.)
+The application uses a per-session dynamic API prefix so browser code calls
+`/a3f8d2/auth/me` instead of the canonical `/api/auth/me`. This supplements
+the cookie's current `SameSite=Lax` policy and frustrates automated scanners.
 
 ### 3.1 Generation
 
 On `POST /api/auth/login`:
 
-1. Generate a 12-hex random path: `apiPath := hex.EncodeToString(random(6))`.
-2. Set cookie `auth_path=<apiPath>; Path=/; HttpOnly; SameSite=Strict; Max-Age=<sessionTTL>`.
-3. Return `{ data: { user, apiBase: "/" + apiPath } }` (the worker / SPA bootstrap reads this).
+1. Generate a random six-character lowercase base36 path containing at least one digit.
+2. Set cookie `auth_path=<apiPath>; Path=/; HttpOnly; SameSite=Lax; Max-Age=<sessionTTL>`.
+3. Return the public user object with an additional `apiBase: "/" + apiPath` field for the SPA bootstrap.
 
 ### 3.2 Routing
 
-Mount routes on **both** the canonical `/api` and the dynamic prefix. The dynamic prefix middleware extracts the prefix from the URL, validates it against the requester's `auth_path` cookie, then strips it and forwards internally to the canonical mux:
+The dynamic-prefix middleware extracts the prefix from the URL, validates it
+against the requester's `auth_path` cookie, then rewrites it internally to the
+canonical mux:
 
 ```go
-r.Use(dynamicAPIPath) // strips and validates
+r.Use(dynamicAPIPath) // gates /api and rewrites valid dynamic paths
 r.Mount("/api", apiRouter) // canonical
 ```
 
 Validation:
 
-- Must be 12 lowercase hex chars.
+- Must be six lowercase base36 characters with at least one digit.
 - Must match `auth_path` cookie.
 - If mismatch or absent, 403 `bad_api_path`.
+
+When enabled, direct `/api/*` access is limited to login bootstrap and public
+attendance endpoints. Other direct requests return `403 api_path_required`.
 
 ### 3.3 SPA bootstrap
 
 The embedded SPA reads the path from a `<meta name="ppgus-api-base">` tag the server injects into `index.html` at serve time. The server replaces `__API_BASE__` placeholder with `/` + apiPath.
 
-This is **optional**. If `DYNAMIC_API_PATH=false`, everything falls back to `/api/`.
+This is enabled by default. If `DYNAMIC_API_PATH=false`, everything falls back to `/api/`.
 
 ## 4. Shared-secret worker auth
 
@@ -202,26 +215,28 @@ ALTER TABLE users ADD COLUMN locked_until TEXT;
 
 ## 10. Configuration
 
-| Env var | Default | Purpose |
-|---|---|---|
-| `JWT_SECRET` | required | HMAC for access + refresh + QR + realtime tokens |
-| `JWT_TTL` | 15m | access |
-| `JWT_REFRESH_TTL` | 720h | refresh |
-| `COOKIE_SECURE` | false | set `Secure` flag |
-| `DYNAMIC_API_PATH` | false | enable §3 |
-| `WORKER_AUTH_REQUIRED` | false | enforce X-PPGUS-Worker-Auth |
-| `WORKER_AUTH_SECRET` | — | shared secret |
-| `RATE_LIMIT_LOGIN_PER_IP` | `10:5m` | configurable |
-| `LOGIN_LOCKOUT_THRESHOLD` | 10 | failed logins before lock |
-| `LOGIN_LOCKOUT_DURATION` | 15m | lock duration |
+| Env var | Default | Purpose | Status |
+|---|---|---|---|
+| `JWT_SECRET` | required | HMAC for access and refresh tokens | Current |
+| `JWT_TTL` | 24h | access-token lifetime | Current |
+| `COOKIE_SECURE` | false | set `Secure` flag | Current |
+| `DYNAMIC_API_PATH` | true | enable §3 | Current |
+| `WORKER_AUTH_REQUIRED` | false | enforce X-PPGUS-Worker-Auth | Planned |
+| `WORKER_AUTH_SECRET` | — | shared secret | Planned |
+| `RATE_LIMIT_LOGIN_PER_IP` | `10:5m` | configurable | Planned |
+| `LOGIN_LOCKOUT_THRESHOLD` | 10 | failed logins before lock | Planned |
+| `LOGIN_LOCKOUT_DURATION` | 15m | lock duration | Planned |
 
-## 11. Threat model recap
+## 11. Target threat model recap
+
+This table combines current mitigations with the remaining planned hardening
+described above.
 
 | Threat | Mitigation |
 |---|---|
-| Stolen access cookie | Short TTL (15 min); refresh rotation; logout revokes |
+| Stolen access cookie | Configurable access TTL (24h default); refresh rotation; logout revokes |
 | Stolen refresh cookie | One-time-use `jti`; rotation detects reuse |
-| CSRF | SameSite=Strict + (optional) dynamic API path |
+| CSRF | SameSite cookie policy + dynamic API path (enabled by default) |
 | XSS exfiltrating tokens | HttpOnly cookies (tokens never reach JS); CSP blocks inline scripts |
 | Clickjacking | X-Frame-Options=DENY, CSP frame-ancestors none |
 | Open redirect | Validate `redirect` query params against an allowlist of internal SPA routes |

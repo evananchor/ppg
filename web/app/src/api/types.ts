@@ -12,7 +12,7 @@ export type User = {
 
 // AuthMe is the server response shape for /api/auth/login and /api/auth/me.
 // It extends User with the API base for the current session (either the
-// canonical "/api" or a dynamic per-session prefix like "/a3f8d2e1b9c7").
+// canonical "/api" or a dynamic per-session prefix like "/a3f8d2").
 export type AuthMe = User & {
   apiBase: string
 }
@@ -20,7 +20,7 @@ export type AuthMe = User & {
 export const STUDENT_LEVELS = ['Caberawit', 'Pra Remaja', 'Remaja', 'Pra Nikah'] as const
 export type StudentLevel = (typeof STUDENT_LEVELS)[number]
 
-export const STUDENT_KELOMPOKS = ['California', 'Chicago', 'New Hampshire', 'Canada'] as const
+export const STUDENT_KELOMPOKS = ['California', 'Chicago', 'New Hampshire', 'Canada', 'Other'] as const
 export type StudentKelompok = (typeof STUDENT_KELOMPOKS)[number]
 
 export type StudentStatus = 'active' | 'left'

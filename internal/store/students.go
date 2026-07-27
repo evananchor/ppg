@@ -42,6 +42,7 @@ type ListParams struct {
 	Query    string
 	Status   string // "", "active", "left"
 	Kelompok string // "" (no filter) or one of the canonical kelompoks
+	Gender   string // "", "male", "female"
 	Limit    int
 	Offset   int
 }
@@ -151,6 +152,10 @@ func (s *Students) List(ctx context.Context, p ListParams) (*ListResult, error) 
 		clauses = append(clauses, "kelompok = ?")
 		args = append(args, p.Kelompok)
 	}
+	if g := strings.TrimSpace(p.Gender); g != "" {
+		clauses = append(clauses, "gender = ?")
+		args = append(args, g)
+	}
 
 	where := ""
 	if len(clauses) > 0 {
@@ -214,7 +219,9 @@ type StudentStats struct {
 // California → Canada for kelompok), with a trailing zero-count entry for
 // any canonical value that has no rows.
 func (s *Students) Stats(ctx context.Context) (*StudentStats, error) {
-	out := &StudentStats{}
+	// Initialize slice fields so JSON marshals empty results as [] (not null).
+	// The TS client treats these as plain arrays and crashes on null.
+	out := &StudentStats{Matrix: []LevelKelompokCell{}}
 
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM students`).Scan(&out.Total); err != nil {
 		return nil, err
