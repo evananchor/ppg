@@ -13,6 +13,7 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      BULK_MAX_BYTES: ${BULK_MAX_BYTES:-20971520}
     volumes:
       - ppg-data:/app/data
     restart: unless-stopped

@@ -106,11 +106,17 @@ func run() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
+	if _, err := store.SeedKurikulum(context.Background(), db); err != nil {
+		return fmt.Errorf("seed kurikulum: %w", err)
+	}
+
 	users := store.NewUsers(db)
 	students := store.NewStudents(db)
 	teachers := store.NewTeachers(db)
 	attendances := store.NewAttendances(db)
 	roles := store.NewRoles(db)
+	kurikulum := store.NewKurikulum(db)
+	pencapaian := store.NewPencapaian(db)
 
 	if cfg.SeedAdminEmail != "" && cfg.SeedAdminPass != "" {
 		if err := store.SeedAdmin(context.Background(), users, cfg.SeedAdminEmail, cfg.SeedAdminUsername, cfg.SeedAdminPass); err != nil {
@@ -163,6 +169,27 @@ func run() error {
 			attendancesH := handler.NewAttendances(attendances)
 			p.Get("/attendances", attendancesH.List)
 			p.Get("/attendances/{id}", attendancesH.Get)
+
+			kurikulumH := handler.NewKurikulum(kurikulum)
+			p.Get("/tingkat", kurikulumH.ListTingkat)
+			p.Get("/materi-ajar", kurikulumH.ListMateriAjar)
+
+			pencapaianH := handler.NewPencapaian(pencapaian)
+			p.Get("/pencapaian", pencapaianH.List)
+			p.Get("/achievement/report", pencapaianH.ClassReport)
+
+			p.Group(func(adm chi.Router) {
+				adm.Use(auth.RequireRole("admin"))
+				adm.Post("/tingkat", kurikulumH.CreateTingkat)
+				adm.Put("/tingkat/{id}", kurikulumH.UpdateTingkat)
+				adm.Delete("/tingkat/{id}", kurikulumH.DeleteTingkat)
+				adm.Post("/materi-ajar", kurikulumH.CreateMateriAjar)
+				adm.Put("/materi-ajar/{id}", kurikulumH.UpdateMateriAjar)
+				adm.Delete("/materi-ajar/{id}", kurikulumH.DeleteMateriAjar)
+			})
+
+			p.Post("/pencapaian", pencapaianH.Upsert)
+			p.Delete("/pencapaian/{id}", pencapaianH.Delete)
 
 			bulkH := handler.NewBulk(handler.BulkOptions{
 				MaxBytes:    handler.ParseMaxBytesEnv(os.Getenv("BULK_MAX_BYTES")),

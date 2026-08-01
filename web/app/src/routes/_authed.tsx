@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import {
+  BookMarked,
   BookOpen,
   CalendarCheck,
   GraduationCap,
@@ -120,6 +121,7 @@ function AuthedLayout() {
           <SideLink to="/students" icon={<Users size={16} />} label={t('nav.students')} />
           <SideLink to="/sessions" icon={<BookOpen size={16} />} label={t('nav.sessions')} />
           <SideLink to="/attendance" icon={<CalendarCheck size={16} />} label={t('nav.attendance')} />
+          <SideLink to="/pustaka" icon={<BookMarked size={16} />} label={t('nav.pustaka')} />
           <SideLink to="/achievement" icon={<Trophy size={16} />} label={t('nav.achievement')} />
         </nav>
         <div className="space-y-2 border-t border-slate-200 p-3">
