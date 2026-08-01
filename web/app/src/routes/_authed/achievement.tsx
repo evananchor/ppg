@@ -1,12 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { UnderDevelopment } from '@/components/UnderDevelopment'
-import { useTranslation } from '@/lib/i18n'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authed/achievement')({
-  component: AchievementPage,
+  component: () => <Outlet />,
 })
-
-function AchievementPage() {
-  const { t } = useTranslation()
-  return <UnderDevelopment title={t('nav.achievement')} />
-}
