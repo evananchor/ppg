@@ -1,4 +1,6 @@
-import { apiFetch } from './client'
+import { resolveApiPath } from './base'
+import { ApiError, apiFetch } from './client'
+import type { BulkReport } from './bulk'
 import type { MateriAjar } from './kurikulum'
 
 export type PencapaianStatus = 'belum' | 'proses' | 'tuntas'
@@ -54,6 +56,44 @@ export function getClassReport(tingkatId: string, semester: number) {
   return apiFetch<ReportRow[]>(
     `/api/achievement/report?tingkatId=${encodeURIComponent(tingkatId)}&semester=${semester}`,
   )
+}
+
+export async function importPencapaianMatrix(
+  file: File,
+  params: { studentId: string; tingkatId: string; semester: number },
+): Promise<BulkReport> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mode', 'upsert')
+
+  const qs = new URLSearchParams({
+    studentId: params.studentId,
+    tingkatId: params.tingkatId,
+    semester: String(params.semester),
+  })
+  const res = await fetch(resolveApiPath(`/api/pencapaian/matrix/import?${qs}`), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+    body: form,
+  })
+
+  let data: unknown = null
+  const text = await res.text()
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      // non-JSON response; leave as null
+    }
+  }
+
+  if (!res.ok) {
+    const errBody = (data as { error?: { code?: string; message?: string } } | null)?.error
+    throw new ApiError(res.status, errBody?.code ?? 'unknown', errBody?.message ?? res.statusText)
+  }
+
+  return data as BulkReport
 }
 
 export const NILAI_GRADES = [

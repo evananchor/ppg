@@ -332,6 +332,9 @@ const id = {
     completionLabel: 'Ketuntasan per Tema',
     no: 'No.',
     exportCsv: 'Ekspor CSV',
+    export: 'Ekspor',
+    import: 'Impor',
+    bulkTitle: 'Impor / Ekspor CSV Pencapaian',
     month: { 1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'Mei', 6: 'Jun', 7: 'Jul', 8: 'Agu', 9: 'Sep', 10: 'Okt', 11: 'Nov', 12: 'Des' },
     grade: {
       baikSekali: 'Baik Sekali',
@@ -682,6 +685,9 @@ const en: Messages = {
     completionLabel: 'Completion by Theme',
     no: 'No.',
     exportCsv: 'Export CSV',
+    export: 'Export',
+    import: 'Import',
+    bulkTitle: 'Import / Export Achievement CSV',
     month: { 1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec' },
     grade: {
       baikSekali: 'Excellent',

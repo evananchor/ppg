@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -86,6 +87,37 @@ func (s *PencapaianStore) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// findByKey returns the pencapaian for (student, materi), or ErrNotFound.
+func (s *PencapaianStore) findByKey(ctx context.Context, studentID, materiID string) (*Pencapaian, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+pencapaianCols+` FROM pencapaian WHERE student_id = ? AND materi_ajar_id = ? LIMIT 1`,
+		studentID, materiID)
+	p, err := scanPencapaian(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return p, nil
+}
+
+// findMateriIDByNomor resolves a materi by its nomor within one tingkat and
+// semester — the identity the assessment matrix CSV carries.
+func (s *PencapaianStore) findMateriIDByNomor(ctx context.Context, tingkatID string, nomor, semester int) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id FROM materi_ajar WHERE tingkat_id = ? AND nomor = ? AND semester = ? LIMIT 1`,
+		tingkatID, nomor, semester).Scan(&id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return id, nil
 }
 
 // PencapaianRow pairs a pencapaian record with its materi (any tingkat) and

@@ -7,6 +7,14 @@ import type {
   StudentStatus,
 } from './types'
 
+export type {
+  Student,
+  StudentInput,
+  StudentKelompok,
+  StudentList,
+  StudentStatus,
+} from './types'
+
 export type ListQuery = {
   q?: string
   status?: StudentStatus

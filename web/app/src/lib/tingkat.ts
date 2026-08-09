@@ -1,5 +1,4 @@
 import type { MateriAjar, Tingkat } from '@/api/kurikulum'
-import { ageInYears } from '@/lib/age'
 
 export const TEMA_ORDER = ['ALIM', 'FAQIH', 'AKHLAQUL KARIMAH', 'KEMANDIRIAN'] as const
 
@@ -18,7 +17,7 @@ export const TEMA_BG: Record<string, string> = {
 }
 
 export function sortedTemas(materi: MateriAjar[]): string[] {
-  const set = new Set(materi.map((m) => m.tema))
+  const set = new Set<string>(materi.map((m) => m.tema ?? '(tanpa tema)'))
   const rest = Array.from(set).filter((x) => !TEMA_ORDER.includes(x as never)).sort()
   return [...TEMA_ORDER.filter((x) => set.has(x)), ...rest]
 }
@@ -39,7 +38,7 @@ export function groupByTemaSub(materi: MateriAjar[]): MateriGroup[] {
     subs.get(sub)!.push(m)
   }
   return sortedTemas(materi).map((tema) => {
-    const subs = map.get(tema) ?? new Map()
+    const subs = map.get(tema) ?? new Map<string, MateriAjar[]>()
     return {
       tema,
       subTemas: Array.from(subs.entries()).map(([subTema, items]) => ({
