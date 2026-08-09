@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/fadhilkurnia/ppg-dashboard/internal/auth"
+	"github.com/fadhilkurnia/ppg-dashboard/internal/bulk"
 	"github.com/fadhilkurnia/ppg-dashboard/internal/httpx"
 	"github.com/fadhilkurnia/ppg-dashboard/internal/store"
 )
@@ -109,4 +111,65 @@ func (h *Pencapaian) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// MatrixImport handles POST /pencapaian/matrix/import (admin group). It
+// ingests the assessment matrix CSV scoped to one student, tingkat, and
+// semester, resolving materi by nomor and applying delta-only updates.
+func (h *Pencapaian) MatrixImport(w http.ResponseWriter, r *http.Request) {
+	studentID := r.URL.Query().Get("studentId")
+	tingkatID := r.URL.Query().Get("tingkatId")
+	semester, _ := strconv.Atoi(r.URL.Query().Get("semester"))
+	if studentID == "" || tingkatID == "" || semester == 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "studentId, tingkatId, dan semester wajib diisi")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, defaultMaxBytes)
+	if err := r.ParseMultipartForm(defaultMaxBytes); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			httpx.Error(w, http.StatusRequestEntityTooLarge, "too_large",
+				fmt.Sprintf("file exceeds %d bytes", defaultMaxBytes))
+			return
+		}
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "expected multipart/form-data with a 'file' field")
+		return
+	}
+
+	mode := bulk.ModeUpsert
+	if raw := r.FormValue("mode"); raw != "" {
+		var err error
+		if mode, err = bulk.ParseMode(raw); err != nil {
+			httpx.Error(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "missing 'file' field")
+		return
+	}
+	defer file.Close()
+
+	body, err := readAllCapped(file, defaultMaxBytes)
+	if err != nil {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "too_large",
+			fmt.Sprintf("file exceeds %d bytes", defaultMaxBytes))
+		return
+	}
+
+	imp := store.NewPencapaianMatrix(h.p, studentID, tingkatID, semester)
+	report, err := bulk.Process[store.MatrixRow](r.Context(), newBytesReader(body), imp, mode)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if report.Summary.Total > maxRows {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "too_large",
+			fmt.Sprintf("csv has %d rows; max is %d", report.Summary.Total, maxRows))
+		return
+	}
+	httpx.JSON(w, http.StatusOK, report)
 }

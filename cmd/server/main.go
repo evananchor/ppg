@@ -196,6 +196,7 @@ func run() error {
 				Teachers:    store.NewTeachersBulk(teachers),
 				Students:    store.NewStudentsBulk(students),
 				Attendances: store.NewAttendancesBulk(attendances),
+				Pencapaian:  store.NewPencapaianBulk(db, pencapaian),
 				Users:       store.NewUsersBulk(users),
 			})
 			// Per-entity literal routes: chi's radix tree prefers literal
@@ -215,6 +216,8 @@ func run() error {
 				adm.Post("/teachers", teachersH.Create)
 				adm.Patch("/teachers/{id}", teachersH.Update)
 				adm.Delete("/teachers/{id}", teachersH.Delete)
+
+				adm.Post("/pencapaian/matrix/import", pencapaianH.MatrixImport)
 
 				adm.Post("/attendances", attendancesH.Create)
 				adm.Patch("/attendances/{id}", attendancesH.Update)

@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/cn'
 
 const AVATAR_COLORS = [

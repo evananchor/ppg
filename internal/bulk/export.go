@@ -18,8 +18,12 @@ type Exporter interface {
 }
 
 // WriteCSV runs exp.StreamRows and pipes each row through w. The header
-// line is emitted first.
+// line is emitted first. A UTF-8 BOM is written first so Excel opens the
+// file as UTF-8 instead of misdecoding non-ASCII bytes as cp1252.
 func WriteCSV(ctx context.Context, w io.Writer, exp Exporter, q url.Values) error {
+	if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+		return err
+	}
 	cw := csv.NewWriter(w)
 	if err := cw.Write(exp.Headers()); err != nil {
 		return err

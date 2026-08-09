@@ -68,7 +68,7 @@ function KurikulumPage() {
         (tema === '' || m.tema === tema) &&
         (needle === '' ||
           m.materi.toLowerCase().includes(needle) ||
-          m.tema.toLowerCase().includes(needle) ||
+          (m.tema ?? '').toLowerCase().includes(needle) ||
           (m.subTema ?? '').toLowerCase().includes(needle)),
     )
   }, [allMateri, semester, tema, q])
@@ -200,7 +200,7 @@ function KurikulumPage() {
                 <p className="text-sm text-slate-900">
                   <span className="mr-1.5 inline-flex items-center gap-1 text-xs">
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">
-                      {t('achievement.semesterName', { n: m.semester })}
+                      {t('achievement.semesterName', { n: m.semester ?? 0 })}
                     </span>
                     {m.jenis ? (
                       <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">
@@ -210,6 +210,7 @@ function KurikulumPage() {
                   </span>
                   {m.nomor}. {m.materi}
                 </p>
+                {m.rincian ? <p className="mt-0.5 text-xs text-slate-400">{m.rincian}</p> : null}
                 {m.keterangan ? (
                   <p className="mt-0.5 text-xs text-slate-400">{m.keterangan}</p>
                 ) : null}
@@ -265,7 +266,7 @@ function KurikulumPage() {
         <MateriForm
           initial={editMa === 'new' ? null : editMa}
           saving={saveMa.isPending}
-          onSave={(v) => saveMa.mutate(v)}
+          onSave={(v) => saveMa.mutate({ ...v, tingkatId: current!.id })}
           onClose={() => setEditMa(null)}
         />
       )}
@@ -338,7 +339,7 @@ function MateriForm({
 }: {
   initial: MateriAjar | null
   saving: boolean
-  onSave: (v: MateriAjarInput) => void
+  onSave: (v: Omit<MateriAjarInput, 'tingkatId'>) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -347,7 +348,7 @@ function MateriForm({
     tema: initial?.tema ?? '',
     subTema: initial?.subTema ?? '',
     materi: initial?.materi ?? '',
-    cakupan: initial?.cakupan ?? '',
+    rincian: initial?.rincian ?? '',
     jenis: initial?.jenis ?? '',
     semester: initial?.semester ?? null,
     keterangan: initial?.keterangan ?? '',
@@ -380,7 +381,7 @@ function MateriForm({
           <Input value={f.materi} onChange={(e) => set('materi', e.target.value)} />
         </Field>
         <Field label={t('achievement.cakupan')}>
-          <Input value={f.cakupan} onChange={(e) => set('cakupan', e.target.value)} />
+          <Input value={f.rincian} onChange={(e) => set('rincian', e.target.value)} />
         </Field>
         <Field label={t('achievement.jenisLabel')}>
           <select className={selectCls()} value={f.jenis} onChange={(e) => set('jenis', e.target.value)}>
@@ -411,7 +412,10 @@ function MateriForm({
               tema: f.tema.trim(),
               subTema: f.subTema.trim(),
               materi: f.materi.trim(),
-              cakupan: f.cakupan.trim(),
+              rincian: f.rincian.trim(),
+              cakupan: initial?.cakupan ?? null,
+              deskripsi: initial?.deskripsi ?? null,
+              statusPromes: initial?.statusPromes ?? null,
               jenis: f.jenis,
               semester: f.semester,
               keterangan: f.keterangan.trim(),

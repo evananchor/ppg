@@ -161,7 +161,7 @@ export function BulkPanel({ entity, isAdmin, invalidateKey, exportParams }: Prop
   )
 }
 
-function ReportView({ report }: { report: BulkReport }) {
+export function ReportView({ report }: { report: BulkReport }) {
   const { t } = useTranslation()
   const { summary, results } = report
   const failed = results.filter((r) => r.outcome === 'failed')

@@ -36,6 +36,7 @@ type BulkOptions struct {
 	Teachers    *store.TeachersBulk
 	Students    *store.StudentsBulk
 	Attendances *store.AttendancesBulk
+	Pencapaian  *store.PencapaianBulk
 	Users       *store.UsersBulk
 }
 
@@ -63,6 +64,11 @@ func NewBulk(opt BulkOptions) *Bulk {
 		registerImport(b, opt.Attendances)
 		b.exports["attendances"] = opt.Attendances
 		b.deletes["attendances"] = opt.Attendances
+	}
+	if opt.Pencapaian != nil {
+		registerImport(b, opt.Pencapaian)
+		b.exports["pencapaian"] = opt.Pencapaian
+		b.deletes["pencapaian"] = opt.Pencapaian
 	}
 	if opt.Users != nil {
 		registerImport(b, opt.Users)
@@ -248,7 +254,7 @@ func (h *Bulk) schemaEntity(w http.ResponseWriter, entity string) {
 // BulkEntities is the canonical list of entities the bulk pipeline supports.
 // Routes are registered per entity (not via a {entity} wildcard) so the
 // literal path out-ranks any per-entity /{id} routes in chi's tree.
-var BulkEntities = []string{"students", "teachers", "attendances", "users"}
+var BulkEntities = []string{"students", "teachers", "attendances", "pencapaian", "users"}
 
 // ParseMaxBytesEnv reads BULK_MAX_BYTES; falls back to the default if
 // unset, blank, or unparseable.

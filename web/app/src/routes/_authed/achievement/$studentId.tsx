@@ -1,15 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, FileSpreadsheet, Search } from 'lucide-react'
+import { ArrowLeft, FileSpreadsheet, Search, Trash2, Upload } from 'lucide-react'
 import { z } from 'zod'
 
 import { useMe } from '@/lib/auth'
 import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
+import { ReportView } from '@/components/BulkPanel'
+import type { BulkReport } from '@/api/bulk'
 import { listMateriAjar, listTingkats, type MateriAjar } from '@/api/kurikulum'
 import {
   deletePencapaian,
+  importPencapaianMatrix,
   listPencapaian,
   upsertPencapaian,
   type PencapaianStatus,
@@ -32,9 +35,7 @@ export const Route = createFileRoute('/_authed/achievement/$studentId')({
   component: StudentAchievementPage,
 })
 
-const SEMESTERS = [1, 2]
-
-function selectCls() {
+const selectCls = () => {
   return 'flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-50'
 }
 
@@ -44,6 +45,8 @@ function StudentAchievementPage() {
   const navigate = useNavigate({ from: '/achievement/$studentId' })
   const tab = search.tab ?? 'penilaian'
   const { t } = useTranslation()
+  const { data: user } = useMe()
+  const isAdmin = user?.role === 'admin'
   const { data: student, isPending } = useQuery({
     queryKey: ['student', studentId],
     queryFn: () => getStudent(studentId),
@@ -52,7 +55,7 @@ function StudentAchievementPage() {
 
   const [tingkatId, setTingkatId] = useState('')
   const [tema, setTema] = useState('')
-  const [semester, setSemester] = useState<number | null>(null)
+  const [semester, setSemester] = useState<number | null>(1)
   const [q, setQ] = useState('')
 
   const age = ageInYears(student?.dateOfBirth)
@@ -79,7 +82,7 @@ function StudentAchievementPage() {
         (tema === '' || m.tema === tema) &&
         (needle === '' ||
           m.materi.toLowerCase().includes(needle) ||
-          m.tema.toLowerCase().includes(needle) ||
+          (m.tema ?? '').toLowerCase().includes(needle) ||
           (m.subTema ?? '').toLowerCase().includes(needle)),
     )
   }, [allMateri, semester, tema, q])
@@ -88,6 +91,49 @@ function StudentAchievementPage() {
     () => new Map(existing.map((p) => [p.materiAjarId, p])),
     [existing],
   )
+
+  const sem = semester ?? currentSemester()
+  const exportRows = useMemo(() => filtered.filter((m) => m.semester === sem), [filtered, sem])
+  const months = SEMESTER_MONTHS[sem]
+
+  const monthValue = (m: MateriAjar, month: number): number | null => {
+    const p = byMateri.get(m.id)
+    if (!p?.tanggal || p.nilaiAngka == null) return null
+    return new Date(p.tanggal).getMonth() + 1 === month ? p.nilaiAngka : null
+  }
+
+  const downloadMatrixCsv = (withStatus: boolean) => {
+    const head = withStatus
+      ? ['No', 'Semester', 'Tema', 'Sub Tema', 'Rincian', 'Materi', 'Status', ...months.map((mo) => t(`achievement.month.${mo}`))]
+      : ['No', 'Semester', 'Tema', 'Sub Tema', 'Rincian', 'Materi', ...months.map((mo) => t(`achievement.month.${mo}`))]
+    const lines = groupByTemaSub(exportRows)
+      .flatMap((g) => g.subTemas.flatMap((s) => s.materi))
+      .map((m) => {
+      const p = byMateri.get(m.id)
+      const cells = [m.nomor, sem, m.tema, m.subTema ?? '', m.rincian ?? '', m.materi]
+      if (withStatus) cells.push(p?.status ?? '')
+      cells.push(...months.map((mo) => monthValue(m, mo) ?? ''))
+      return cells.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(',')
+    })
+    const blob = new Blob(['\uFEFF' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `pencapaian-${(student?.name ?? 'generus').replaceAll(' ', '-')}-smt${sem}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  const qc = useQueryClient()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [importReport, setImportReport] = useState<BulkReport | null>(null)
+  const importMut = useMutation({
+    mutationFn: (file: File) =>
+      importPencapaianMatrix(file, { studentId, tingkatId: currentTingkat!.id, semester: sem }),
+    onSuccess: (r) => {
+      setImportReport(r)
+      qc.invalidateQueries({ queryKey: ['pencapaian', studentId] })
+    },
+  })
 
   if (isPending) {
     return <p className="py-8 text-center text-sm text-slate-500">{t('common.loading')}</p>
@@ -154,13 +200,35 @@ function StudentAchievementPage() {
         setSemester={setSemester}
         q={q}
         setQ={setQ}
+        tab={tab}
+        canExport={exportRows.length > 0 && !!currentTingkat}
+        canImport={isAdmin && tab === 'penilaian' && !!currentTingkat && !importMut.isPending}
+        importing={importMut.isPending}
+        onExport={() => downloadMatrixCsv(tab === 'penilaian')}
+        onImport={() => fileRef.current?.click()}
       />
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) {
+            setImportReport(null)
+            importMut.mutate(f)
+          }
+          e.target.value = ''
+        }}
+      />
+      {importReport ? <ReportView report={importReport} /> : null}
+      {importMut.error ? <p className="text-sm text-red-600">{importMut.error.message}</p> : null}
 
       {tab === 'penilaian' ? (
         <PenilaianTab student={student} filtered={filtered} byMateri={byMateri} />
       ) : (
         <LaporanTab
-          student={student}
           filtered={filtered}
           byMateri={byMateri}
           semester={semester ?? 1}
@@ -181,6 +249,12 @@ function FilterCard({
   setSemester,
   q,
   setQ,
+  tab,
+  canExport,
+  canImport,
+  importing,
+  onExport,
+  onImport,
 }: {
   tingkats: { id: string; nama: string; urutan: number; umur?: number | null }[]
   current?: { id: string; nama: string }
@@ -192,6 +266,12 @@ function FilterCard({
   setSemester: (v: number | null) => void
   q: string
   setQ: (v: string) => void
+  tab: 'penilaian' | 'laporan'
+  canExport: boolean
+  canImport: boolean
+  importing: boolean
+  onExport: () => void
+  onImport: () => void
 }) {
   const { t } = useTranslation()
   return (
@@ -243,6 +323,19 @@ function FilterCard({
           </button>
         </div>
       </Field>
+      <Field label={t('achievement.bulkTitle')}>
+        <div className="flex h-10 gap-2">
+          <Button variant="secondary" disabled={!canExport} onClick={onExport}>
+            <FileSpreadsheet size={16} className="mr-1" /> {t('achievement.export')}
+          </Button>
+          {tab === 'penilaian' && (
+            <Button variant="secondary" disabled={!canImport} onClick={onImport}>
+              <Upload size={16} className="mr-1" />
+              {importing ? t('common.loading') : t('achievement.import')}
+            </Button>
+          )}
+        </div>
+      </Field>
       <Field label={t('achievement.searchLabel')} className="min-w-48 flex-1">
         <div className="relative">
           <Search size={16} className="absolute left-3 top-3 text-slate-400" />
@@ -273,7 +366,7 @@ function PenilaianTab({
 }) {
   const { t } = useTranslation()
   const { data: user } = useMe()
-  const manage = user?.role === 'admin' || user?.role === 'coordinator' || user?.role === 'teacher'
+  const manage = !!user
   const qc = useQueryClient()
   const groups = useMemo(() => groupByTemaSub(filtered), [filtered])
 
@@ -282,10 +375,10 @@ function PenilaianTab({
     const tuntas = new Map<string, number>()
     const proses = new Map<string, number>()
     for (const m of filtered) {
-      totals.set(m.tema, (totals.get(m.tema) ?? 0) + 1)
+      totals.set(m.tema ?? '', (totals.get(m.tema ?? '') ?? 0) + 1)
       const p = byMateri.get(m.id)
-      if (p?.status === 'tuntas') tuntas.set(m.tema, (tuntas.get(m.tema) ?? 0) + 1)
-      if (p?.status === 'proses') proses.set(m.tema, (proses.get(m.tema) ?? 0) + 1)
+      if (p?.status === 'tuntas') tuntas.set(m.tema ?? '', (tuntas.get(m.tema ?? '') ?? 0) + 1)
+      if (p?.status === 'proses') proses.set(m.tema ?? '', (proses.get(m.tema ?? '') ?? 0) + 1)
     }
     return { totals, tuntas, proses }
   }, [filtered, byMateri])
@@ -325,7 +418,7 @@ function PenilaianTab({
       ) : (
         <MateriTree
           groups={groups}
-          temaExtra={(temaName, materi) => {
+          temaExtra={(temaName, _materi) => {
             const tot = stats.totals.get(temaName) ?? 0
             const done = stats.tuntas.get(temaName) ?? 0
             const proc = stats.proses.get(temaName) ?? 0
@@ -343,8 +436,8 @@ function PenilaianTab({
           renderRow={(m) => {
             const p = byMateri.get(m.id)
             return (
-              <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-                <div className="min-w-0 flex-1">
+              <div className="flex flex-col gap-2 px-4 py-2.5 md:flex-row md:items-center md:gap-3">
+                <div className="min-w-0 md:flex-1">
                   <p className="text-sm text-slate-900">
                     {m.nomor}. {m.materi}
                   </p>
@@ -352,8 +445,9 @@ function PenilaianTab({
                     {m.tema}
                     {m.subTema ? ` · ${m.subTema}` : ''}
                   </p>
+                  {m.rincian ? <p className="text-xs text-slate-400">{m.rincian}</p> : null}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(8.5rem,1fr)_auto] items-center gap-1.5 md:gap-2">
                   <select
                     className={selectCls()}
                     value={p?.status ?? 'belum'}
@@ -371,7 +465,7 @@ function PenilaianTab({
                     min={0}
                     max={100}
                     disabled={!manage}
-                    className="w-20"
+                    className="w-full"
                     defaultValue={p?.nilaiAngka != null ? String(p.nilaiAngka) : ''}
                     key={`${m.id}-nilai`}
                     onBlur={(e) => {
@@ -388,7 +482,7 @@ function PenilaianTab({
                   <Input
                     type="date"
                     disabled={!manage}
-                    className="w-36"
+                    className="w-full"
                     defaultValue={p?.tanggal ?? ''}
                     key={`${m.id}-tanggal`}
                     onBlur={(e) => {
@@ -403,9 +497,15 @@ function PenilaianTab({
                     }}
                   />
                   {manage && p && (
-                    <Button size="sm" variant="danger" onClick={() => del.mutate(p.id)}>
-                      {t('common.delete')}
-                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => del.mutate(p.id)}
+                      className="rounded-md p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                      aria-label={t('common.delete')}
+                      title={t('common.delete')}
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   )}
                 </div>
               </div>
@@ -420,12 +520,10 @@ function PenilaianTab({
 // ---------- Laporan ----------
 
 function LaporanTab({
-  student,
   filtered,
   byMateri,
   semester,
 }: {
-  student: Student
   filtered: MateriAjar[]
   byMateri: Map<string, { id: string; status?: PencapaianStatus; nilaiAngka?: number | null; tanggal?: string | null }>
   semester: number
@@ -441,9 +539,9 @@ function LaporanTab({
     const bySub = new Map<string, { total: number; done: number }>()
     for (const m of rows) {
       const done = byMateri.get(m.id)?.status === 'tuntas' ? 1 : 0
-      const tema = byTema.get(m.tema) ?? { total: 0, done: 0 }
-      byTema.set(m.tema, { total: tema.total + 1, done: tema.done + done })
-      const key = `${m.tema}/${m.subTema}`
+      const tema = byTema.get(m.tema ?? '') ?? { total: 0, done: 0 }
+      byTema.set(m.tema ?? '', { total: tema.total + 1, done: tema.done + done })
+      const key = `${m.tema ?? ''}/${m.subTema}`
       const sub = bySub.get(key) ?? { total: 0, done: 0 }
       bySub.set(key, { total: sub.total + 1, done: sub.done + done })
     }
@@ -473,29 +571,8 @@ function LaporanTab({
         : 'text-slate-300',
     )
 
-  const exportCsv = () => {
-    const head = ['No', 'Tema', 'Sub Tema', 'Materi', ...months.map((m) => t(`achievement.month.${m}`))]
-    const lines = rows.map((m) => {
-      return [m.nomor, m.tema, m.subTema ?? '', m.materi, ...months.map((mo) => valueFor(m, mo) ?? '')]
-        .map((v) => `"${String(v).replaceAll('"', '""')}"`)
-        .join(',')
-    })
-    const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `report-${student.name.replaceAll(' ', '-')}-smt${sem}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={exportCsv} disabled={rows.length === 0}>
-          <FileSpreadsheet size={16} className="mr-1" /> {t('achievement.exportCsv')}
-        </Button>
-      </div>
-
       {rows.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-slate-900">{t('achievement.completionLabel')}</h3>
@@ -563,9 +640,16 @@ function LaporanTab({
             renderRow={(m) => (
               <div className="grid gap-2 px-4 py-2" style={GRID_TEMPLATE}>
                 <span className="text-sm text-slate-500">{m.nomor}</span>
-                <span className="min-w-0 truncate text-sm text-slate-900" title={m.materi}>
-                  {m.materi}
-                </span>
+                <div className="min-w-0">
+                  <span className="block truncate text-sm text-slate-900" title={m.materi}>
+                    {m.materi}
+                  </span>
+                  {m.rincian ? (
+                    <span className="block truncate text-xs text-slate-400" title={m.rincian}>
+                      {m.rincian}
+                    </span>
+                  ) : null}
+                </div>
                 {months.map((mo) => (
                   <span key={mo} className={cellCls(valueFor(m, mo))}>
                     {valueFor(m, mo) ?? '·'}
